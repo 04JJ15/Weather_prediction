@@ -15,7 +15,7 @@ features = [
     '습도(%)_예측',
     '절대습도_예측',
     '기온(degC)_예측',
-    '대기압(hPa)_예측'
+    '대기압(mmHg)_예측'
 ]
 targets = [
     '습도(%)_관측',
@@ -23,7 +23,7 @@ targets = [
     '대기압(mmHg)_관측'
 ]
 
-""" 병합 결과 확인 및 CSV로 저장장
+''' 4단계) 병합 결과 확인 및 CSV로 저장
 # 결과 확인
 print("\n 병합된 데이터 컬럼 목록 : ")
 print(merged_df.columns.tolist())
@@ -31,9 +31,9 @@ print(merged_df.columns.tolist())
 # CSV 파일로 저장
 output_path = 'data/병합_결과.csv'
 merged_df.to_csv(output_path, index=False, encoding='utf-8-sig') # 엑셀 한글 호환을 위한 인코딩
-"""
+ '''
 
-''' 결측값, 기본 통계 분석, 이상치 확인
+''' 5단계) 결측값, 기본 통계 분석, 이상치 확인
 # 1. 결측치 확인
 print("\n [결측치 확인]")
 null_counts = merged_df.isnull().sum()
@@ -58,7 +58,7 @@ for col in merged_df.select_dtypes(include='number').columns:
     print(f"{col}: {outlier_count}개")
 '''
 
-# 7단계 : Feature / Target 분리
+# 7단계) Feature / Target 분리
 X = merged_df[features]
 y = merged_df[targets]
 
@@ -73,6 +73,7 @@ print("\n Target 컬럼 목록:")
 print(y.columns.tolist())
 '''
 
+''' 8단계) 상관관계 히트맵 시각화
 # 8단계
 # 1. 입력(X) + 출력(y) 합쳐서 하나의 DataFrame 생성
 corr_df = pd.concat([X, y], axis=1) # 두 개의 데이터 프레임을 열 기준으로 합침
@@ -92,3 +93,5 @@ sns.heatmap(
 plt.title(" Feature-Target 상관관계 히트맵", fontsize=14)
 plt.tight_layout()
 plt.show()
+
+'''
