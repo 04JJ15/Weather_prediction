@@ -13,6 +13,7 @@ weather_prediction_project/
 │   ├── train.py            # LightGBM 학습 및 저장
 │   └── evaluate.py         # 모델 평가 및 가중 점수 계산
 └── main.py                 # EDA (병합 확인·통계·이상치·상관관계)
+```
 
 ## 3. 수행 계획
 1. **환경 구성** (VSCode, 필수 라이브러리 설치)  
@@ -49,6 +50,7 @@ targets = [
     '기온(degC)_관측',
     '대기압(mmHg)_관측'
 ]
+```
 
 ## 6. 10단계 평가 결과
 | Target               | MAE    | RMSE   | 가중 점수 |
