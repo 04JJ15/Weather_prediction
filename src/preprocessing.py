@@ -20,6 +20,15 @@ def load_and_merge(forecast_path, observed_path):
 
     # 병합 inner 조인 사용용
     merged = pd.merge(forecast, observed, on='datetime', how='inner')
-    return merged
+    
+    # 대기압 단위 통일 hPa to mmHg: 1 hPa ~= 0.750062 mmHg
+    merged['대기압(mmHg)_예측'] = merged['대기압(hPa)_예측'] * 0.750062
+    merged.drop(columns=['대기압(hPa)_예측'], inplace=True)
 
-# 내가 직접 볼수 있게 코드를 제공해달라하기
+    # 컬럼 순서 정리
+    cols = ['datetime'] + \
+           [c for c in merged.columns if '_예측' in c] + \
+           [c for c in merged.columns if '_관측' in c]
+    merged = merged[cols]
+    
+    return merged
