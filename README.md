@@ -136,7 +136,7 @@ targets = [
    merged['습도×기온']       = merged['습도(%)_예측'] * merged['기온(degC)_예측']
    merged['일사량×절대습도']  = merged['일사량(w/m^2)_예측'] * merged['절대습도_예측']
    # 필요에 따라 추가
-  ```
+  
 
 ---
 
