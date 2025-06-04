@@ -53,16 +53,16 @@ for col in y.columns:
     print(f"저장 완료: {model_path}")
 '''
 
-# 11단계 3) 하이퍼파라미터 튜닝 및 교차검증증
+# 11단계 3) 하이퍼파라미터 튜닝 및 교차검증
 # 1. TimeSeriesSplit 설정
-tss = TimeSeriesSplit(n_splits=3)
+tss = TimeSeriesSplit(n_splits=5)
 
 # 2. 하이퍼파라미터 그리드 설정
 param_grid = {
-    'num_leaves' : [31, 63],
-    'learning_rate' : [0.1, 0.01],
-    'n_estimators' : [100, 300],
-    'max_depth' : [-1, 10, 20]
+    'num_leaves' : [15, 31, 63, 127],
+    'learning_rate' : [0.2, 0.1, 0.05, 0.01],
+    'n_estimators' : [50, 100, 200, 300, 500],
+    'max_depth' : [-1, 5, 10, 15]
 }
 
 # 3. 타깃별로 GridSearchCV 수행
