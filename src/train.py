@@ -55,7 +55,7 @@ for col in y.columns:
 
 # 11단계 3) 하이퍼파라미터 튜닝 및 교차검증
 # 1. TimeSeriesSplit 설정
-tss = TimeSeriesSplit(n_splits=5)
+tss = TimeSeriesSplit(n_splits=5, max_train_size=36*7*24) #9개월
 
 # 2. 하이퍼파라미터 그리드 설정
 param_grid = {

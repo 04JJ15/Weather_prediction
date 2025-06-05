@@ -52,6 +52,44 @@ targets = [
 ]
 ```
 
+# 🎯 공모전 과제 목표 다시 확인
+
+- **예측 지점의 기상 데이터** → **실제 관측 지점 데이터 간 오차를 보정**
+- 입력값(예측 데이터)을 기반으로 **정확한 관측값(습도, 기온, 대기압)**을 예측
+- **평가 기준**: MAE, RMSE, 가중 평균 오차  
+  - 가중치: 습도 0.3, 기온 0.5, 대기압 0.2
+
+---
+
+## 🤔 어떤 회귀 모델이 적절할까?
+
+| 모델명 | 특징 | 장점 | 단점 | 공모전 적합성 |
+|--------|------|------|------|----------------|
+| Linear Regression | 선형 모델 | 빠르고 해석 용이 | 복잡한 관계 못 잡음 | 🔸 (베이스라인용) |
+| Ridge/Lasso | 규제가 있는 선형 모델 | 과적합 억제 | 하이퍼파라미터 필요 | 🔸 |
+| Random Forest Regressor | 앙상블 결정트리 | 비선형 관계 학습, 해석 가능 | 느리고 메모리 사용 큼 | ✅ |
+| XGBoost | 부스팅 기반 트리 모델 | 강력한 성능, 결측치 자동 처리 | 복잡하고 튜닝 필요 | ✅ |
+| LightGBM | XGBoost보다 빠름 | 빠르고 효율적 | 분포 균형에 민감 | ✅✅ |
+
+---
+
+## ✅ 가장 적절한 모델: LightGBM or XGBoost
+
+### 이유:
+- 데이터는 수천 건 규모 → **트리 기반 모델**에 적합
+- 입력값과 출력값 간 관계가 **비선형적임** (특히 기온, 일사량 등)
+- 평가 지표로 **RMSE/MAE**를 사용 → 트리 기반 회귀 모델이 강점
+- **다중 출력 회귀**도 지원하거나, 각 변수별로 **개별 모델링** 가능
+
+---
+
+## 🏁 추천 전략
+
+### 베이스라인:
+- **LightGBM Regressor**로 각 target(기온, 습도, 대기압)을 **별도 학습**
+- 이후 결과를 조합하여 **가중합 평가**
+
+
 ## 6. 10단계 평가 결과
 | Target               | MAE    | RMSE   | 가중 점수 |
 |----------------------|--------|--------|-----------|
@@ -242,3 +280,194 @@ targets = [
        'max_depth': [ -1, 10, 20 ]
      }
      ```
+
+# 하이퍼파라미터 튜닝 결과 해석 및 보충 제안
+
+아래는 11-3단계(하이퍼파라미터 튜닝 + 교차검증) 결과입니다.  
+각 타깃별로 “교차검증 평균 RMSE(CV RMSE)”와 “전체 데이터에 대해 재학습한 후의 MAE·RMSE”를 함께 보여줍니다.
+
+---
+
+## 결과 요약
+
+### [습도(%)_관측]
+- **최적 파라미터**:
+  ```python
+  {
+    'learning_rate': 0.01,
+    'max_depth': 10,
+    'n_estimators': 300,
+    'num_leaves': 31
+  }
+  ```
+- **CV RMSE (평균)**: 11.2447  
+- **전체 데이터 MAE**: 6.3167  
+- **전체 데이터 RMSE**: 8.1586
+
+---
+
+### [기온(degC)_관측]
+- **최적 파라미터**:
+  ```python
+  {
+    'learning_rate': 0.1,
+    'max_depth': -1,
+    'n_estimators': 100,
+    'num_leaves': 63
+  }
+  ```
+- **CV RMSE (평균)**: 2.9481  
+- **전체 데이터 MAE**: 0.6452  
+- **전체 데이터 RMSE**: 0.8357
+
+---
+
+### [대기압(mmHg)_관측]
+- **최적 파라미터**:
+  ```python
+  {
+    'learning_rate': 0.1,
+    'max_depth': 10,
+    'n_estimators': 100,
+    'num_leaves': 31
+  }
+  ```
+- **CV RMSE (평균)**: 0.9205  
+- **전체 데이터 MAE**: 0.3012  
+- **전체 데이터 RMSE**: 0.3960
+
+---
+
+## 1. CV RMSE vs 전체 데이터 RMSE 차이
+
+- **CV RMSE**  
+  - GridSearchCV 내부에서 `TimeSeriesSplit(n_splits=3)`을 이용하여 “과거 → 미래” 순서로 3번 검증  
+  - 각 fold에서 나온 RMSE 평균 → **실제 모델 일반화 성능 지표**
+
+- **전체 데이터 RMSE**  
+  - 최적 파라미터로 전체 데이터를 재학습 후, 같은 데이터에 대해 예측  
+  - **과적합 가능성** 존재 → 일반화 성능과 다를 수 있음
+
+---
+
+## 2. 타깃별 상세 해석
+
+### ① 습도(%)_관측
+
+- 학습이 느린 `learning_rate=0.01`과 `n_estimators=300` 조합
+- `max_depth=10`, `num_leaves=31` → 과적합 방지 시도
+- **CV RMSE: 11.2447**
+  - 이전 학습 세트 RMSE(~6.34)보다 큼
+  - 미래 데이터 예측 상황을 더 정확히 반영
+- **전체 데이터 RMSE: 8.1586**
+  - 학습 세트를 그대로 다시 예측한 값 → CV보다 작게 나옴
+
+**결론**  
+CV RMSE(11.24)를 모델 성능 판단 기준으로 삼는 것이 안전
+
+---
+
+### ② 기온(degC)_관측
+
+- `learning_rate=0.1`과 `n_estimators=100` → 빠른 학습
+- `max_depth=-1`, `num_leaves=63` → 복잡한 트리
+- **CV RMSE: 2.9481**
+  - 이전 RMSE(~1.06)보다 큼 → 계절 불일치 가능성
+- **전체 데이터 RMSE: 0.8357**
+
+**결론**  
+CV RMSE(2.95)가 실제 예측 시 오차에 더 가까움  
+→ 기온 예측 성능 개선 필요 (목표 RMSE: 1~1.5도 이내)
+
+---
+
+### ③ 대기압(mmHg)_관측
+
+- `learning_rate=0.1`, `n_estimators=100` → 적절한 설정
+- `max_depth=10`, `num_leaves=31`
+- **CV RMSE: 0.9205**
+  - 학습 세트 RMSE(~0.40)의 두 배 이상
+- **전체 데이터 RMSE: 0.3960**
+
+**결론**  
+CV RMSE(0.92)는 목표 수준에 가까움  
+→ 모델 안정성 양호하나, 분할 방식에 따른 오차 주의
+
+---
+
+## 3. 보충 및 개선 방안
+
+### (1) CV RMSE와 학습 세트 RMSE 차이 원인
+
+- **계절 분포 불균형**: TimeSeriesSplit 분할 시 특정 계절 데이터에 치우침
+- **데이터 분포 변화**: 특정 시기 급변(예: 겨울철) 구간에 취약
+- **모델 복잡도 불균형**: 일부 fold에서 과적합/과소적합 동시 발생 가능
+
+---
+
+### (2) 개선 방향
+
+#### a. TimeSeriesSplit 설정 변경
+- `n_splits=5`로 증가 → 계절 편향 완화
+- `max_train_size` 지정 예시:
+  ```python
+  TimeSeriesSplit(n_splits=5, max_train_size=2000)
+  ```
+
+#### b. 파라미터 그리드 확장
+```python
+param_grid = {
+    'num_leaves': [15, 31, 63, 127],
+    'learning_rate': [0.2, 0.1, 0.05, 0.01],
+    'n_estimators': [50, 100, 200, 300, 500],
+    'max_depth': [-1, 5, 10, 15]
+}
+```
+
+- 먼저 큰 스텝으로 → 이후 세분화
+
+#### c. Optuna 활용 (자동 튜닝)
+```python
+import optuna
+
+def objective(trial):
+    param = {
+        'num_leaves': trial.suggest_int('num_leaves', 16, 128),
+        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-3, 1e-1),
+        'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+        'max_depth': trial.suggest_int('max_depth', 5, 20)
+    }
+    model = LGBMRegressor(**param, random_state=42)
+    rmses = []
+    for train_idx, val_idx in TimeSeriesSplit(n_splits=3).split(X):
+        model.fit(X.iloc[train_idx], y[col].iloc[train_idx])
+        preds = model.predict(X.iloc[val_idx])
+        rmses.append(mean_squared_error(y[col].iloc[val_idx], preds)**0.5)
+    return np.mean(rmses)
+
+study = optuna.create_study(direction='minimize')
+study.optimize(objective, n_trials=50)
+print(study.best_params)
+```
+
+---
+
+#### d. 피처 엔지니어링 보강
+
+- 새로운 파생 변수 생성 (예: 최고–최저 기온 차이)
+- 로그/차분/스케일링 등 비선형 처리
+
+#### e. 앙상블 및 스태킹 적용
+
+- XGBoost, RandomForest, CatBoost 등과 앙상블
+- 스태킹 예시:
+  - 1차 모델 예측 → 메타 모델로 입력
+
+---
+
+## 4. 요약 제안
+
+- CV RMSE는 실제 예측 오차를 반영 → 이를 기준으로 판단
+- TimeSeriesSplit 구조 조정 필요
+- 파라미터 튜닝 고도화(Optuna), 피처 엔지니어링, 앙상블 등을 통한 성능 개선
+- 반복적인 실험으로 가중 평균 RMSE 점수를 꾸준히 줄여나가는 전략 권장
