@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 # 기상 예측 데이터와 관측 데이터를 시간 기준으로 병합
 
@@ -32,12 +33,24 @@ def load_and_merge(forecast_path, observed_path):
     merged['습도x기온'] = merged['습도(%)_예측'] * merged['기온(degC)_예측']
     merged['일사량x절대습도'] = merged['일사량(w/m^2)_예측'] * merged['절대습도_예측']
 
+    # 11단계 3.4) Lag 피처 추가 (습도 예측 시차)
+    for lag in [1, 3, 6, 12, 24]:
+        merged[f'humidity_lag_{lag}h'] = merged['습도(%)_예측'].shift(lag)
+    
+    # 결측치 제거 (Lag로 인한 NaN 행 삭제)
+    merged.dropna(subset=[f'humidity_lag_{lag}h' for lag in [1, 3, 6, 12, 24]], inplace=True)
+
     # 컬럼 순서 정리
-    cols = ['datetime'] + \
-           [c for c in merged.columns if '_예측' in c] + \
-           ['hour', 'month', 'weekday'] + \
-           ['일사량x기온', '습도x기온', '일사량x절대습도'] + \
-           [c for c in merged.columns if '_관측' in c]
+    cols = [
+        'datetime',
+        '일사량(w/m^2)_예측', '습도(%)_예측', '절대습도_예측',
+        '기온(degC)_예측', '대기압(mmHg)_예측',
+        'hour', 'month', 'weekday',
+        '일사량x기온', '습도x기온', '일사량x절대습도',
+        *[f'humidity_lag_{lag}h' for lag in [1,3,6,12,24]],
+        # 관측 타깃
+        '습도(%)_관측', '기온(degC)_관측', '대기압(mmHg)_관측'
+    ]
     merged = merged[cols]
     
     return merged
