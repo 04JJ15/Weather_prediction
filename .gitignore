@@ -1,0 +1,27 @@
+# ────────────────────────────────────────────────
+# 1) Python 환경 관련
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 2) 가상환경
+venv/
+.env/
+
+# 3) 데이터 파일
+data/raw/
+data/processed/
+
+# 4) outputs (로그, 그래프 등)
+# outputs/
+
+# 5) 모델 바이너리 (pickle, joblib)
+models/*.pkl
+models/*.joblib
+
+# 6) Jupyter 노트북 체크포인트
+.ipynb_checkpoints/
+
+# 7) OS별 불필요 파일
+.DS_Store
+Thumbs.db

@@ -1,94 +1,126 @@
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from lightgbm import LGBMRegressor
-from catboost import CatBoostRegressor
-from preprocessing import load_and_merge
+import pandas as pd
+import catboost
+from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.linear_model import RidgeCV
 from sklearn.metrics import mean_squared_error
+from preprocessing import load_and_merge
 
-# ---------------------------
-# 1) 전체 데이터로 학습된 모델 불러오기 및 최적 파라미터 추출
-# ---------------------------
-# Optuna로 최적화된 LGBM 모델
-lgb_final = joblib.load('models/model_lgb_humidity_optuna.pkl')
-all_params_lgb = lgb_final.get_params()
-best_params_lgb = {k: all_params_lgb[k] for k in [
-    'num_leaves','learning_rate','n_estimators','max_depth',
-    'min_child_samples','subsample','colsample_bytree'
-]}
 
-# Optuna로 최적화된 CatBoost 모델
-cat_final = joblib.load('models/model_cat_humidity_optuna.pkl')
-all_params_cat = cat_final.get_params()
-best_params_cat = {k: all_params_cat[k] for k in [
-    'learning_rate','depth','iterations','l2_leaf_reg','bagging_temperature'
-]}
+class StackingPipeline:
+    """
+    Meta model stacking pipeline: takes dict of base models and a trained meta model.
+    """
+    def __init__(self, base_models, meta_model):
+        self.base_models = base_models
+        self.meta_model = meta_model
 
-# Optuna로 최적화된 RandomForest 모델
-rf_final = joblib.load('models/model_rf_humidity_optuna.pkl')
-all_params_rf = rf_final.get_params()
-best_params_rf = {k: all_params_rf[k] for k in [
-    'n_estimators','max_depth','min_samples_split','min_samples_leaf'
-]}
+    def predict(self, X):
+        # X: DataFrame of original features including fold-wise generated lag/rolling columns
+        preds = []
+        for name, mdl in self.base_models.items():
+            preds.append(mdl.predict(X))
+        mat = np.column_stack(preds)
+        return self.meta_model.predict(mat)
 
-# ---------------------------
-# 2) 앙상블 CV 평가 및 저장 함수
-# ---------------------------
-def train_ensemble(forecast_path, observed_path, save_path):
-    # 데이터 로드 & 전처리 (Lag 포함된 상태)
-    df = load_and_merge(forecast_path, observed_path)
-    features = [
-        '일사량(w/m^2)_예측','습도(%)_예측','절대습도_예측',
-        '기온(degC)_예측','대기압(mmHg)_예측',
-        'hour','month','weekday',
-        '일사량x기온','습도x기온','일사량x절대습도',
-        'humidity_lag_1h','humidity_lag_3h','humidity_lag_6h',
-        'humidity_lag_12h','humidity_lag_24h'
-    ]
-    X = df[features]
-    y = df['습도(%)_관측']
 
-    # TimeSeriesSplit 설정
+def generate_oof(df, cfg):
+    lag_windows  = cfg.get("lag", [])
+    roll_windows = cfg.get("rolling", [])
+    lag_source   = cfg["lag_col"]
+    feat_cols    = cfg["features"]
+
+    oof_df = pd.DataFrame(index=df.index, columns=cfg["models"].keys())
+
     tss = TimeSeriesSplit(n_splits=5)
-    rmses = []
+    for name in cfg["models"]:
+        mdl = joblib.load(f"models/{cfg['name']}_{name}_optuna.pkl")
+        for tr_idx, va_idx in tss.split(df):
+            train = df.iloc[tr_idx].copy()
+            val   = df.iloc[va_idx].copy()
 
-    # 각 Fold마다 재학습 후 앙상블 예측
-    for train_idx, val_idx in tss.split(X):
-        X_tr, X_va = X.iloc[train_idx], X.iloc[val_idx]
-        y_tr, y_va = y.iloc[train_idx], y.iloc[val_idx]
+            # 1) train에만 lag/roll 생성
+            for lag in lag_windows:
+                train[f"{lag_source}_lag_{lag}h"] = train[lag_source].shift(lag)
+            for w in roll_windows:
+                train[f"{lag_source}_roll_{w}h"] = (
+                    train[lag_source].shift(1)
+                                     .rolling(w, min_periods=1)
+                                     .mean()
+                                     .ffill()
+                )
+            train.dropna(subset=feat_cols + [cfg["target_col"]], inplace=True)
 
-        # LGBM fold 재학습
-        lgb = LGBMRegressor(**best_params_lgb, random_state=42, verbose=-1)
-        lgb.fit(X_tr, y_tr)
-        # CatBoost fold 재학습
-        cat = CatBoostRegressor(**best_params_cat, random_state=42, verbose=0)
-        cat.fit(X_tr, y_tr)
-        # RF fold 재학습
-        rf = RandomForestRegressor(**best_params_rf, random_state=42)
-        rf.fit(X_tr, y_tr)
+            # 2) val에도 동일 방식 적용
+            combined = pd.concat([train, val])
+            for lag in lag_windows:
+                combined[f"{lag_source}_lag_{lag}h"] = combined[lag_source].shift(lag)
+            for w in roll_windows:
+                combined[f"{lag_source}_roll_{w}h"] = (
+                    combined[lag_source].shift(1)
+                                      .rolling(w, min_periods=1)
+                                      .mean()
+                                      .ffill()
+                )
+            val = combined.loc[val.index].copy()
+            val.dropna(subset=feat_cols + [cfg["target_col"]], inplace=True)
 
-        # 앙상블 예측 및 RMSE
-        preds = np.mean([
-            lgb.predict(X_va),
-            cat.predict(X_va),
-            rf.predict(X_va)
-        ], axis=0)
-        rmses.append(mean_squared_error(y_va, preds) ** 0.5)
+            # 3) 예측 및 OOF 기록
+            X_va = val[feat_cols]
+            preds = mdl.predict(X_va)
+            oof_df.loc[val.index, name] = preds
 
-    print(f"[Ensemble CV RMSE] 평균: {np.mean(rmses):.4f}")
+    return oof_df
 
-    # ---------------------------
-    # 3) 최종 모델 저장
-    # ---------------------------
-    # 전체 데이터로 학습된 모델을 그대로 저장
-    joblib.dump((lgb_final, cat_final, rf_final), save_path)
-    print(f"✅ 앙상블 모델 저장: {save_path}")
+def main():
+    import yaml
+
+    cfg_all = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
+    df_all = load_and_merge()
+
+    for target, cfg in cfg_all.items():
+        cfg["name"] = target
+        print(f"\n▶ Generating stacking pipeline for [{target}]")
+
+        # 2) OOF 예측 생성
+        oof_df = generate_oof(df_all, cfg)
+
+        # 3) Base 모델별 OOF RMSE 출력 (NaN은 제외)
+        y_true = df_all[cfg["target_col"]]
+        for name in cfg["models"]:
+            y_pred = oof_df[name]
+            mask   = y_pred.notna()
+            rmse   = mean_squared_error(y_true[mask], y_pred[mask]) ** 0.5
+            print(f"[OOF] Base `{name}` RMSE: {rmse:.4f}")
+
+        # 4) 메타 모델 학습을 위한 mask (모두 예측된 행만)
+        mask   = oof_df.notna().all(axis=1)
+        meta_X = oof_df.loc[mask].values
+        meta_y = df_all.loc[mask, cfg["target_col"]].values
+
+        # 5) 메타 모델 (시계열 CV용 Ridge)
+        meta_model = RidgeCV(
+            alphas=[0.1, 1.0, 10.0],
+            scoring="neg_root_mean_squared_error",
+            cv=TimeSeriesSplit(n_splits=5)
+        )
+        meta_model.fit(meta_X, meta_y)
+        meta_pred = meta_model.predict(meta_X)
+        meta_rmse = mean_squared_error(meta_y, meta_pred) ** 0.5
+        print(f"[OOF] Stacking meta-model RMSE: {meta_rmse:.4f}")
+
+        # 4) 파이프라인 저장
+        base_models = {
+            name: joblib.load(Path("models") / f"{target}_{name}_optuna.pkl")
+            for name in cfg["models"]
+        }
+        pipe = StackingPipeline(base_models, meta_model)
+        out_path = Path("models") / f"{target}_stacking_pipeline.pkl"
+        joblib.dump(pipe, out_path)
+        print(f"✅ Saved stacking pipeline: {out_path}")
 
 
-if __name__ == '__main__':
-    train_ensemble(
-        'data/데이터_분석과제_7_기상예측데이터_2401_2503.csv',
-        'data/데이터_분석과제_7_기상관측데이터_2401_2503.csv',
-        'models/humidity_ensemble_models.pkl'
-    )
+if __name__ == "__main__":
+    main()

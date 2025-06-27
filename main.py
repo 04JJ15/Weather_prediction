@@ -1,97 +1,95 @@
-from src.preprocessing import load_and_merge
-import seaborn as sns
-import matplotlib.pyplot as plt
+# main.py
+import os
+import sys
+import argparse
+import yaml
+import joblib
+
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
-# 파일 경로
-forecast_path = 'data/데이터_분석과제_7_기상예측데이터_2401_2503.csv'
-observed_path = 'data/데이터_분석과제_7_기상관측데이터_2401_2503.csv'
+from pathlib import Path
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-# 병합 실행
-merged_df = load_and_merge(forecast_path, observed_path)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-features = [
-    '일사량(w/m^2)_예측',
-    '습도(%)_예측',
-    '절대습도_예측',
-    '기온(degC)_예측',
-    '대기압(mmHg)_예측'
-]
-targets = [
-    '습도(%)_관측',
-    '기온(degC)_관측',
-    '대기압(mmHg)_관측'
-]
+from src.preprocessing import load_and_merge
+from src.train_models import main as train_models_main
+from src.ensemble import main as ensemble_main
+from src.evaluate import evaluate  # 여러분이 완성한 evaluate() 함수
 
-''' 4단계) 병합 결과 확인 및 CSV로 저장
-# 결과 확인
-print("\n 병합된 데이터 컬럼 목록 : ")
-print(merged_df.columns.tolist())
+# ----------------------------------------
+def ensure_dirs():
+    for sub in ["figures", "scores"]:
+        d = Path("outputs") / sub
+        d.mkdir(parents=True, exist_ok=True)
 
-# CSV 파일로 저장
-output_path = 'data/병합_결과.csv'
-merged_df.to_csv(output_path, index=False, encoding='utf-8-sig') # 엑셀 한글 호환을 위한 인코딩
- '''
+def save_scores(df_scores: pd.DataFrame):
+    path = Path("outputs/scores/final_scores.csv")
+    df_scores.to_csv(path, index=False, encoding="utf-8-sig")
+    print(f"✅ Scores saved to {path}")
 
-''' 5단계) 결측값, 기본 통계 분석, 이상치 확인
-# 1. 결측치 확인
-print("\n [결측치 확인]")
-null_counts = merged_df.isnull().sum()
-print(null_counts[null_counts > 0] if null_counts.sum() > 0 else "결측치 없음")
+def plot_and_save(y_true, y_pred, target_col):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    plt.rc('font', family=['Malgun Gothic', 'DejaVu Sans'])
+    plt.figure(figsize=(6,4))
+    plt.scatter(y_true, y_pred, alpha=0.3, s=5)
+    plt.plot([y_true.min(), y_true.max()],
+             [y_true.min(), y_true.max()],
+             'r--')
+    plt.title(f"{target_col}: True vs Pred")
+    plt.xlabel("True")
+    plt.ylabel("Pred")
+    fpath = Path("outputs/figures") / f"{target_col.replace('/','_')}_scatter.png"
+    plt.tight_layout()
+    plt.savefig(fpath)
+    plt.close()
+    print(f"✅ Figure saved to {fpath}")
 
-# 2. 기본 통계 요약
-print("\n [기본 통계 요약]")
-print(merged_df.describe())
+def run_full_pipeline(force_rebuild=False):
+    original_argv = sys.argv.copy()
+    
+    try:
+        # 1) 학습 & 모델 저장 (각 --target)
+        for tgt in ["humidity", "temperature", "pressure"]:
+            print(f"\n===== Training target: {tgt} =====")
+            # sys.argv를 train_models_main이 기대하는 형태로 설정
+            sys.argv = [original_argv[0], "--target", tgt]
+            if force_rebuild:
+                sys.argv.append("--force-rebuild")
+            train_models_main()  # 이제 내부에서 sys.argv를 파싱해 동작합니다.
+    finally:
+        # 원래 argv로 복원
+        sys.argv = original_argv
+    
 
-# 3. 이상치 탐색 (IQR 방식)
-print("\n [이상치 탐색 - IQR 기준]")
-def count_outliers(series):
-    q1 = series.quantile(0.25)
-    q3 = series.quantile(0.75)
-    iqr = q3 - q1
-    lower = q1 - 1.5 * iqr
-    upper = q3 + 1.5 * iqr
-    return ((series < lower) | (series > upper)).sum()
+    # 2) 앙상블 파이프라인 생성
+    print("\n===== Generating stacking pipelines =====")
+    ensemble_main()
 
-for col in merged_df.select_dtypes(include='number').columns:
-    outlier_count = count_outliers(merged_df[col])
-    print(f"{col}: {outlier_count}개")
-'''
+    # 3) 최종 평가 & 결과 수집
+    print("\n===== Final Evaluation =====")
+    df_scores = evaluate()  
+    # evaluate()는 targets 별 MAE/RMSE/가중점수를 DataFrame 으로 리턴한다고 가정
 
-# 7단계) Feature / Target 분리
-X = merged_df[features]
-y = merged_df[targets]
+    # 4) 결과 저장 & 시각화
+    save_scores(df_scores)
+    # scatter plot 예시
+    for col in df_scores["target_col"]:
+        # 실제값/예측값을 evaluate()에서 반환해주면
+        row = df_scores[df_scores["target_col"] == col].iloc[0]
+        y_true = row["y_true"]   # 이젠 순수한 리스트 [0.1,0.2,…]
+        y_pred = row["y_pred"]
+        plot_and_save(y_true, y_pred, col)
 
-''' Feature / Target 확인
-print("\n Feature(X) shape:", X.shape)
-print(" Target(y) shape:", y.shape)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force-rebuild", action="store_true",
+                        help="processed 캐시 파일 재생성 여부")
+    args = parser.parse_args()
 
-print("\n Feature 컬럼 목록:")
-print(X.columns.tolist())
+    ensure_dirs()
+    run_full_pipeline(force_rebuild=args.force_rebuild)
 
-print("\n Target 컬럼 목록:")
-print(y.columns.tolist())
-'''
-
-''' 8단계) 상관관계 히트맵 시각화
-# 8단계
-# 1. 입력(X) + 출력(y) 합쳐서 하나의 DataFrame 생성
-corr_df = pd.concat([X, y], axis=1) # 두 개의 데이터 프레임을 열 기준으로 합침
-
-# 2. 상관계수 계산 (피어슨 상관계수)
-corr_matrix = corr_df.corr() # -1~1사이의 값으로 선형관계를 측정
-
-# 3. 시각화 - 히트맵
-plt.figure(figsize=(10, 8)) # 그래프 크기 설정
-sns.heatmap(
-    corr_matrix,    # 상관계수 행렬 입력
-    annot=True,     # 각 칸에 숫자 값 표시
-    cmap='coolwarm',# 색상 맵: 파랑~빨강
-    fmt=".2f",      # 소수점 둘째 자리까지 표시
-    linewidths=0.5  # 셀 간 경계선 두께
-)
-plt.title(" Feature-Target 상관관계 히트맵", fontsize=14)
-plt.tight_layout()
-plt.show()
-
-'''
