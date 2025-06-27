@@ -1,0 +1,160 @@
+# config/targets.yaml
+
+humidity:
+  target_col: "습도(%)_관측"
+  lag_col:    "습도(%)_예측"
+  features:
+    - 일사량(w/m^2)_예측
+    - 습도(%)_예측
+    - 절대습도_예측
+    - 기온(degC)_예측
+    - 대기압(mmHg)_예측
+    - hour
+    - month
+    - weekday
+    - 일사량x기온
+    - 습도x기온
+    - 일사량x절대습도
+    - 습도(%)_예측_lag_1h
+    - 습도(%)_예측_lag_3h
+    - 습도(%)_예측_lag_6h
+    - 습도(%)_예측_lag_12h
+    - 습도(%)_예측_lag_24h
+  lag:      [1, 3, 6, 12, 24]
+  rolling:  []        # 없음
+
+  models:
+    lgbm:
+      optuna_space:
+        num_leaves: [16, 256]
+        learning_rate: [1.0e-3, 1.0e-1]
+        n_estimators: [50,   500]
+        max_depth:         [5,    30]
+        min_child_samples: [5,    100]
+        subsample:         [0.5,  1.0]
+        colsample_bytree:  [0.5,  1.0]
+        lambda_l1:         [1.0e-8, 10.0]
+        lambda_l2:         [1.0e-8, 10.0]
+        min_gain_to_split: [0.0,  1.0]
+
+    cat:
+      optuna_space:
+        learning_rate: [1.0e-3, 1.0e-1]
+        depth: [4, 12]
+        l2_leaf_reg: [1.0e-3, 10.0]
+        bagging_temperature: [0.0, 1.0]
+        border_count: [32, 255]
+        iterations: [100, 1000]
+
+    rf:
+      optuna_space:
+        n_estimators:      [100,  1000]
+        max_depth:         [5,    30]
+        min_samples_split: [2,    20]
+        min_samples_leaf:  [1,    10]
+        max_features:      ['sqrt', 'log2']
+
+temperature:
+  target_col: "기온(degC)_관측"
+  lag_col:    "기온(degC)_예측"
+  features:
+    - 일사량(w/m^2)_예측
+    - 기온(degC)_예측
+    - hour
+    - month
+    - weekday
+    - 기온(degC)_예측_lag_1h
+    - 기온(degC)_예측_lag_3h
+    - 기온(degC)_예측_lag_6h
+    - 기온(degC)_예측_lag_12h
+    - 기온(degC)_예측_lag_24h
+    - 기온(degC)_예측_roll_3h
+    - 기온(degC)_예측_roll_6h
+  lag:      [1, 3, 6, 12, 24]
+  rolling:  [3, 6]
+
+  models:
+    lgbm:
+      optuna_space:
+        num_leaves:        [16, 128]
+        learning_rate:     [1.0e-3, 1.0e-1]
+        n_estimators:      [50, 500]
+        max_depth:         [3, 15]
+        min_child_samples: [5, 50]
+        subsample:         [0.6, 1.0]
+        colsample_bytree:  [0.6, 1.0]
+        lambda_l1:         [1.0e-8, 10.0]
+        lambda_l2:         [1.0e-8, 10.0]
+        min_gain_to_split: [0.0,  1.0]
+    
+    cat:
+      optuna_space:
+        learning_rate:      [1.0e-3, 1.0e-1]
+        depth:              [4, 12]
+        l2_leaf_reg:        [1.0e-3, 10.0]
+        bagging_temperature: [0.0, 1.0]
+        border_count:       [32, 255]
+        iterations:         [100, 1000]
+    
+    rf:
+      optuna_space:
+        n_estimators:      [100, 1000]
+        max_depth:         [5, 30]
+        min_samples_split: [2, 20]
+        min_samples_leaf:  [1, 10]
+        max_features:      ['sqrt','log2']
+
+pressure:
+  target_col: "대기압(mmHg)_관측"
+  lag_col: "대기압(mmHg)_예측"
+  features:
+    - 일사량(w/m^2)_예측
+    - 습도(%)_예측
+    - 절대습도_예측
+    - 기온(degC)_예측
+    - 대기압(mmHg)_예측
+    - hour
+    - month
+    - weekday
+    - 일사량x기온
+    - 습도x기온
+    - 일사량x절대습도
+    - 일사량x대기압
+    - 대기압(mmHg)_예측_lag_1h
+    - 대기압(mmHg)_예측_lag_3h
+    - 대기압(mmHg)_예측_lag_6h
+    - 대기압(mmHg)_예측_lag_12h
+    - 대기압(mmHg)_예측_lag_24h
+  lag:      [1, 3, 6, 12, 24]
+  rolling:  []   # 혹은 필요시 rolling 윈도우
+
+  models:
+    lgbm:
+      optuna_space:
+        num_leaves:        [16, 128]
+        learning_rate:     [1.0e-3, 1.0e-1]
+        n_estimators:      [50, 500]
+        max_depth:         [5, 30]
+        min_child_samples: [5, 100]
+        subsample:         [0.5, 1.0]
+        colsample_bytree:  [0.5, 1.0]
+        lambda_l1:         [1.0e-8, 10.0]
+        lambda_l2:         [1.0e-8, 10.0]
+        min_gain_to_split: [0.0, 1.0]
+
+    cat:
+      optuna_space:
+        learning_rate:      [1.0e-3, 1.0e-1]
+        depth:              [4, 12]
+        l2_leaf_reg:        [1.0e-3, 10.0]
+        bagging_temperature: [0.0, 1.0]
+        border_count:       [32, 255]
+        iterations:         [100, 1000]
+
+    extra_trees:
+      optuna_space:
+        n_estimators:      [100, 1000]
+        max_depth:         [5, 30]
+        min_samples_split: [2, 20]
+        min_samples_leaf:  [1, 10]
+        max_features:      ['sqrt', 'log2']
