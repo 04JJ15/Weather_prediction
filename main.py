@@ -50,7 +50,7 @@ def plot_and_save(y_true, y_pred, target_col):
 
 def run_full_pipeline(force_rebuild=False):
     original_argv = sys.argv.copy()
-    '''
+    
     try:
         # 1) 학습 & 모델 저장 (각 --target)
         for tgt in ["humidity", "temperature", "pressure"]:
@@ -63,7 +63,7 @@ def run_full_pipeline(force_rebuild=False):
     finally:
         # 원래 argv로 복원
         sys.argv = original_argv
-    '''
+    
 
     # 2) 앙상블 파이프라인 생성
     print("\n===== Generating stacking pipelines =====")
