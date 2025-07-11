@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from src.preprocessing import load_and_merge
 from src.train_models import main as train_models_main
 from src.ensemble import main as ensemble_main
-from src.evaluate import evaluate  # 여러분이 완성한 evaluate() 함수
+from src.evaluate import evaluate
 
 # ----------------------------------------
 def ensure_dirs():

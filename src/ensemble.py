@@ -6,7 +6,7 @@ from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import RidgeCV
 from sklearn.metrics import mean_squared_error
-from preprocessing import load_and_merge
+from src.preprocessing import load_and_merge
 
 
 class StackingPipeline:

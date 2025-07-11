@@ -13,7 +13,7 @@ from lightgbm import LGBMRegressor, early_stopping
 from catboost import CatBoostRegressor, Pool
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 
-from preprocessing import load_and_merge  # src 폴더에서 실행할 때
+from src.preprocessing import load_and_merge  # src 폴더에서 실행할 때
 
 def objective_factory(model_name, space, df, X_cols, y_col,
                       lag_windows, roll_windows, lag_source,
