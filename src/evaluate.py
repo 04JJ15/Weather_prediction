@@ -4,8 +4,8 @@ import pandas as pd
 import joblib
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from preprocessing import load_and_merge
-from ensemble import StackingPipeline
+from src.preprocessing import load_and_merge
+from src.ensemble import StackingPipeline
 
 
 def evaluate():
