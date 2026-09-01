@@ -2,94 +2,98 @@ import yaml
 from pathlib import Path
 import pandas as pd
 import joblib
-import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from src.preprocessing import load_and_merge
-from src.ensemble import StackingPipeline
+
+from src.preprocessing import load_and_merge, split_holdout
+from src.features import build_lagged
+from src.ensemble import StackingPipeline  # noqa: F401  (joblib.load 시 클래스 참조 필요)
+
+WEIGHTS = {
+    '습도(%)_관측': 0.3,
+    '기온(degC)_관측': 0.5,
+    '대기압(mmHg)_관측': 0.2,
+}
 
 
-def evaluate():
-    # 1) 설정 읽기 및 데이터 로드
-    cfg_all = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
-    # force_rebuild=False 로 processed 캐시 사용
-    df = load_and_merge(force_rebuild=False)
-
+def _evaluate_split(df_source, cfg_all, split_name, restrict_index=None):
+    """df_source에 lag 피처를 만든 뒤, restrict_index가 주어지면 그 행들만 남겨서
+    평가한다(홀드아웃처럼 lag 계산엔 앞선 구간의 이력이 필요하지만, 실제 평가는
+    holdout 구간에서만 하고 싶을 때 사용).
+    """
     records = []
-    # 가중치 설정
-    weights = {
-        '습도(%)_관측': 0.3,
-        '기온(degC)_관측': 0.5,
-        '대기압(mmHg)_관측': 0.2
-    }
     final_score = 0.0
+    print(f"\n▶ [{split_name}] 평가")
 
-    print("\n[모델 평가 시작]\n")
-    # 각 타겟별 평가
     for target, cfg in cfg_all.items():
-        target_col = cfg['target_col']
-        weight = weights[target_col]
-        print(f"▶ 평가 대상: {target_col}")
-
-        # 2) 전체 데이터에 lag/rolling 피처 생성
-        lag_windows  = cfg.get('lag', [])
-        roll_windows = cfg.get('rolling', [])
-        lag_source   = cfg.get('lag_col', target_col)
+        obs_col      = cfg['obs_col']
+        forecast_col = cfg['forecast_col']
+        target_col   = cfg['target_col']  # 예측오차(잔차)
         features     = cfg['features']
-        df_eval = df.copy()
-        # lag
-        for l in lag_windows:
-            df_eval[f"{lag_source}_lag_{l}h"] = df_eval[lag_source].shift(l)
-        # rolling (shift 1 후)
-        for w in roll_windows:
-            df_eval[f"{lag_source}_roll_{w}h"] = (
-                df_eval[lag_source]
-                    .shift(1)
-                    .rolling(window=w)
-                    .mean()
-            )
-        df_eval.dropna(subset=features + [target_col], inplace=True)
+        weight       = WEIGHTS[obs_col]
 
-        # 3) 모델 로드 및 예측
-        # 스태킹 파이프라인
+        df_eval = build_lagged(df_source, cfg)
+        if restrict_index is not None:
+            df_eval = df_eval.loc[df_eval.index.intersection(restrict_index)]
+        df_eval = df_eval.dropna(subset=features + [target_col, obs_col, forecast_col])
+
+        # 스태킹 파이프라인 로드 & 예측 (오차 스케일)
         pipe_path = Path("models") / f"{target}_stacking_pipeline.pkl"
         stack_pipe = joblib.load(pipe_path)
-        # 입력 칼럼
-        feature_cols = cfg['features']
-        X_eval = df_eval[feature_cols]
-        # NA 제거
+
+        X_eval = df_eval[features]
         mask = X_eval.notna().all(axis=1)
         X_eval = X_eval.loc[mask]
-        y_true = df_eval.loc[mask, target_col]
 
-        # 예측
-        preds = stack_pipe.predict(X_eval)
+        pred_resid = stack_pipe.predict(X_eval)
+        # 절대값 복원: 예측치(forecast_col) + 예측된 오차
+        pred_abs = pred_resid + df_eval.loc[mask, forecast_col].to_numpy()
+        y_true = df_eval.loc[mask, obs_col]
 
-        # 4) MAE, RMSE
-        mae  = mean_absolute_error(y_true, preds)
-        rmse = mean_squared_error(y_true, preds) ** 0.5
-
-        # 5) 가중 점수
+        mae  = mean_absolute_error(y_true, pred_abs)
+        rmse = mean_squared_error(y_true, pred_abs) ** 0.5
         wscore = weight * ((mae + rmse) / 2)
         final_score += wscore
 
-        print(f"  MAE:        {mae:.4f}")
-        print(f"  RMSE:       {rmse:.4f}")
-        print(f"  가중 점수: {wscore:.4f}\n")
+        print(f"  {obs_col}  n={len(y_true)}  MAE={mae:.4f}  RMSE={rmse:.4f}  가중점수={wscore:.4f}")
 
         records.append({
-            "target_col":     target_col,
+            "split":          split_name,
+            "target_col":     obs_col,
             "y_true":         y_true.tolist(),
-            "y_pred":         preds.tolist(),
+            "y_pred":         pred_abs.tolist(),
             "MAE":            mae,
             "RMSE":           rmse,
-            "weighted_score": wscore
+            "weighted_score": wscore,
         })
-        
 
-    print(f"최종 가중 평균 점수: {final_score:.4f}\n")
+    print(f"  [{split_name}] 최종 가중 평균 점수: {final_score:.4f}")
+    return records
 
-    return pd.DataFrame(records)
+
+def evaluate():
+    cfg_all = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
+    df = load_and_merge(force_rebuild=False)
+    df_train, df_holdout = split_holdout(df)
+
+    print("\n[모델 평가 시작]")
+
+    # (a) 학습기간 재적합 진단 — base 모델이 실제로 본 데이터라 낙관적일 수 있으므로
+    #     "최종 성적"이 아니라 과적합 갭 확인용 참고 지표로만 사용한다.
+    train_records = _evaluate_split(df_train, cfg_all, "train_fit")
+
+    # (b) 홀드아웃(2025-03) — 어떤 학습/튜닝/스태킹에도 쓰이지 않은 구간.
+    #     lag 피처 계산에는 train 구간의 최근 이력이 필요하므로 결합 후 생성하고,
+    #     실제 평가 행은 holdout 구간으로만 제한한다.
+    combined = pd.concat([df_train, df_holdout])
+    holdout_records = _evaluate_split(
+        combined, cfg_all, "holdout", restrict_index=df_holdout.index
+    )
+
+    headline = sum(r["weighted_score"] for r in holdout_records)
+    print(f"\n★ 헤드라인(홀드아웃) 최종 가중 평균 점수: {headline:.4f}\n")
+
+    return pd.DataFrame(train_records + holdout_records)
+
 
 if __name__ == '__main__':
     evaluate()
-

@@ -1,7 +1,11 @@
 # config/targets.yaml
 
 humidity:
-  target_col: "습도(%)_관측"
+  # target_col: 예측-관측 오차(잔차)를 학습 대상으로 삼는 MOS식 프레이밍.
+  # obs_col: 원본 관측값(리포팅/가중치 조회용). forecast_col: 절대값 복원(pred_abs = pred + forecast_col)용.
+  target_col: "습도(%)_오차"
+  obs_col:    "습도(%)_관측"
+  forecast_col: "습도(%)_예측"
   lag_col:    "습도(%)_예측"
   features:
     - 일사량(w/m^2)_예측
@@ -9,6 +13,9 @@ humidity:
     - 절대습도_예측
     - 기온(degC)_예측
     - 대기압(mmHg)_예측
+    - 이슬점_예측
+    - VPD_예측
+    - 일사량log_예측
     - hour
     - month
     - weekday
@@ -20,6 +27,12 @@ humidity:
     - 습도(%)_예측_lag_6h
     - 습도(%)_예측_lag_12h
     - 습도(%)_예측_lag_24h
+    # 과거 오차(바이어스) lag: 자기상관성이 큰 편향을 반영하는 MOS식 피처
+    - 습도(%)_오차_lag_1h
+    - 습도(%)_오차_lag_3h
+    - 습도(%)_오차_lag_6h
+    - 습도(%)_오차_lag_12h
+    - 습도(%)_오차_lag_24h
   lag:      [1, 3, 6, 12, 24]
   rolling:  []        # 없음
 
@@ -55,7 +68,9 @@ humidity:
         max_features:      ['sqrt', 'log2']
 
 temperature:
-  target_col: "기온(degC)_관측"
+  target_col: "기온(degC)_오차"
+  obs_col:    "기온(degC)_관측"
+  forecast_col: "기온(degC)_예측"
   lag_col:    "기온(degC)_예측"
   features:
     - 일사량(w/m^2)_예측
@@ -70,6 +85,11 @@ temperature:
     - 기온(degC)_예측_lag_24h
     - 기온(degC)_예측_roll_3h
     - 기온(degC)_예측_roll_6h
+    - 기온(degC)_오차_lag_1h
+    - 기온(degC)_오차_lag_3h
+    - 기온(degC)_오차_lag_6h
+    - 기온(degC)_오차_lag_12h
+    - 기온(degC)_오차_lag_24h
   lag:      [1, 3, 6, 12, 24]
   rolling:  [3, 6]
 
@@ -105,7 +125,9 @@ temperature:
         max_features:      ['sqrt','log2']
 
 pressure:
-  target_col: "대기압(mmHg)_관측"
+  target_col: "대기압(mmHg)_오차"
+  obs_col:    "대기압(mmHg)_관측"
+  forecast_col: "대기압(mmHg)_예측"
   lag_col: "대기압(mmHg)_예측"
   features:
     - 일사량(w/m^2)_예측
@@ -125,6 +147,11 @@ pressure:
     - 대기압(mmHg)_예측_lag_6h
     - 대기압(mmHg)_예측_lag_12h
     - 대기압(mmHg)_예측_lag_24h
+    - 대기압(mmHg)_오차_lag_1h
+    - 대기압(mmHg)_오차_lag_3h
+    - 대기압(mmHg)_오차_lag_6h
+    - 대기압(mmHg)_오차_lag_12h
+    - 대기압(mmHg)_오차_lag_24h
   lag:      [1, 3, 6, 12, 24]
   rolling:  []   # 혹은 필요시 rolling 윈도우
 
