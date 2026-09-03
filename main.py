@@ -19,14 +19,16 @@ from src.train_models import main as train_models_main
 from src.ensemble import main as ensemble_main
 from src.evaluate import evaluate
 
+OUTPUTS_DIR = Path(os.environ.get("PIPELINE_OUTPUTS_DIR", "outputs"))
+
 # ----------------------------------------
 def ensure_dirs():
     for sub in ["figures", "scores"]:
-        d = Path("outputs") / sub
+        d = OUTPUTS_DIR / sub
         d.mkdir(parents=True, exist_ok=True)
 
 def save_scores(df_scores: pd.DataFrame):
-    path = Path("outputs/scores/final_scores.csv")
+    path = OUTPUTS_DIR / "scores" / "final_scores.csv"
     df_scores.to_csv(path, index=False, encoding="utf-8-sig")
     print(f"✅ Scores saved to {path}")
 
@@ -42,7 +44,7 @@ def plot_and_save(y_true, y_pred, target_col, split):
     plt.title(f"{target_col} ({split}): True vs Pred")
     plt.xlabel("True")
     plt.ylabel("Pred")
-    fpath = Path("outputs/figures") / f"{target_col.replace('/','_')}_{split}_scatter.png"
+    fpath = OUTPUTS_DIR / "figures" / f"{target_col.replace('/','_')}_{split}_scatter.png"
     plt.tight_layout()
     plt.savefig(fpath)
     plt.close()

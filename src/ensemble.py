@@ -1,3 +1,4 @@
+import os
 import yaml
 import joblib
 import numpy as np
@@ -10,6 +11,9 @@ from sklearn.metrics import mean_squared_error
 from src.preprocessing import load_and_merge, split_holdout
 from src.features import build_lagged
 from src.models import build_estimator
+
+CONFIG_PATH = Path(os.environ.get("PIPELINE_CONFIG", "config/targets.yaml"))
+MODELS_DIR = Path(os.environ.get("PIPELINE_MODELS_DIR", "models"))
 
 
 class StackingPipeline:
@@ -32,7 +36,7 @@ class StackingPipeline:
 def _load_best_params(target, model_names):
     return {
         name: yaml.safe_load(
-            Path(f"models/{target}_{name}_best_params.yaml").read_text(encoding="utf-8")
+            (MODELS_DIR / f"{target}_{name}_best_params.yaml").read_text(encoding="utf-8")
         )
         for name in model_names
     }
@@ -79,7 +83,7 @@ def generate_oof(df, cfg):
     return oof_df
 
 def main():
-    cfg_all = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
+    cfg_all = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     df_all = load_and_merge()
     # 홀드아웃(2025-03)은 스태킹 학습에도 절대 사용하지 않는다.
     df_train, _df_holdout = split_holdout(df_all)
@@ -118,11 +122,11 @@ def main():
         # 6) 배포용 파이프라인 저장: base model은 학습기간 전체(df_train)로
         #    재학습된 pkl을 그대로 사용해 실사용 예측 시 정보량을 최대화한다.
         base_models = {
-            name: joblib.load(Path("models") / f"{target}_{name}_optuna.pkl")
+            name: joblib.load(MODELS_DIR / f"{target}_{name}_optuna.pkl")
             for name in cfg["models"]
         }
         pipe = StackingPipeline(base_models, meta_model)
-        out_path = Path("models") / f"{target}_stacking_pipeline.pkl"
+        out_path = MODELS_DIR / f"{target}_stacking_pipeline.pkl"
         joblib.dump(pipe, out_path)
         print(f"✅ Saved stacking pipeline: {out_path}")
 

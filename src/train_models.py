@@ -1,6 +1,7 @@
 # src/train_models.py
 
 import argparse
+import os
 import yaml
 from pathlib import Path
 import joblib
@@ -15,6 +16,11 @@ from catboost import Pool
 from src.preprocessing import load_and_merge, split_holdout
 from src.features import build_lagged
 from src.models import build_estimator
+
+# 피처 셋 A/B 테스트(ablation)처럼 config/모델 저장 위치를 바꿔가며 같은 파이프라인을
+# 재사용할 때 쓰는 오버라이드. 지정 안 하면 기존과 동일하게 동작한다.
+CONFIG_PATH = Path(os.environ.get("PIPELINE_CONFIG", "config/targets.yaml"))
+MODELS_DIR = Path(os.environ.get("PIPELINE_MODELS_DIR", "models"))
 
 
 def _sample_params(trial, model_name, space):
@@ -126,7 +132,7 @@ def optimize_and_save(target, model_name, objective_fn, X, y, prefix, n_trials=1
     print(f"[{target} | {model_name}] CV RMSE(오차 기준): {best_rmse:.4f}")
     print(f"[{target} | {model_name}] Best params: {best_params}")
 
-    models_dir = Path("models")
+    models_dir = MODELS_DIR
     models_dir.mkdir(parents=True, exist_ok=True)
 
     # ensemble.py가 폴드별로 새로 fit해서 진짜 OOF를 만들 때 재사용할 best_params 저장
@@ -155,7 +161,7 @@ def main():
     args = parser.parse_args()
 
     # 1) config 로드
-    cfg    = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
+    cfg    = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     conf_t = cfg[args.target]
     features   = conf_t["features"]
     models_cfg = conf_t["models"]

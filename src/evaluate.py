@@ -1,3 +1,4 @@
+import os
 import yaml
 from pathlib import Path
 import pandas as pd
@@ -7,6 +8,9 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from src.preprocessing import load_and_merge, split_holdout
 from src.features import build_lagged
 from src.ensemble import StackingPipeline  # noqa: F401  (joblib.load 시 클래스 참조 필요)
+
+CONFIG_PATH = Path(os.environ.get("PIPELINE_CONFIG", "config/targets.yaml"))
+MODELS_DIR = Path(os.environ.get("PIPELINE_MODELS_DIR", "models"))
 
 WEIGHTS = {
     '습도(%)_관측': 0.3,
@@ -37,7 +41,7 @@ def _evaluate_split(df_source, cfg_all, split_name, restrict_index=None):
         df_eval = df_eval.dropna(subset=features + [target_col, obs_col, forecast_col])
 
         # 스태킹 파이프라인 로드 & 예측 (오차 스케일)
-        pipe_path = Path("models") / f"{target}_stacking_pipeline.pkl"
+        pipe_path = MODELS_DIR / f"{target}_stacking_pipeline.pkl"
         stack_pipe = joblib.load(pipe_path)
 
         X_eval = df_eval[features]
@@ -71,7 +75,7 @@ def _evaluate_split(df_source, cfg_all, split_name, restrict_index=None):
 
 
 def evaluate():
-    cfg_all = yaml.safe_load(Path("config/targets.yaml").read_text(encoding="utf-8"))
+    cfg_all = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     df = load_and_merge(force_rebuild=False)
     df_train, df_holdout = split_holdout(df)
 
